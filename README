@@ -1,0 +1,4 @@
+A gui mpd client written in racket
+
+Goal: a simple mpd client that interfaces with gnome-shell
+
