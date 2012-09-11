@@ -1,9 +1,17 @@
 #!/usr/bin/gracket
 
-#lang racket
+;; Racket Scheme MPD Gui Client
+;;
+;; Copyright 2012 Vincent Dumas 
+;; Distributed under the GPLv3 license
+;;
 
-(require racket/gui)
+#lang racket/base
+
+(require racket/gui/base racket/class racket/list)
 (require "../mpdclient/obj-main.rkt")
+
+;;TODO: MPRIS2
 
 (define mpd-frame
   (new
@@ -14,6 +22,16 @@
 	  (define mpd (new mpd-client%))
 	  ;;TODO: check pass/fail
 	  (send mpd create-connection)
+	  ;; (define/public (mpd-connect)
+	  ;;   (send mpd create-connection))
+	  ;; (define/public (mpd-connect-args host port)
+	  ;;   (send mpd create-connection host port))
+	  
+	  (define/override (on-exit)
+	    (send mpd close)
+	    (send mpd close-connection)
+	    (send this show #f))
+
 
 	  (define menu-bar (new menu-bar% [parent this]))
 	  (define menu-file (new menu% [parent menu-bar] [label "File"]))
@@ -109,44 +127,125 @@
 				   [callback
 				    (lambda (b e)
 				      (send mpd shuffle 1))]))
-	  
+
+	  ;; currently playing, time, album, artist
 	  (define status-panel (new horizontal-pane%
 				    [parent display-panel]))
-	  (define text (new message% [label "WEEEEE"] [parent status-panel]))
+	  
+	  (define (get-status-msg hasht)
+	    (string-append (hash-ref hasht "Track") " "
+			   (hash-ref hasht "Title") " "
+			   (hash-ref hasht "Time") "\n"
+			   (hash-ref hasht "Artist") " -- "
+			   (hash-ref hasht "Album")))
+	  
+	  (define text (new message%
+			    [label (get-status-msg
+				    (send mpd parse-response
+					  (send mpd current-song)))]
+			    [parent status-panel]))
+
+	  ;; (define info (send mpd list-all-info))
+	  ;; (displayln info)
 	  ;; 1 Artist
 	  ;; 2 Album
 	  ;; 3 Song
 	  (define library-panel (new horizontal-pane%
 				  [parent this]))
+	  (define artists (send mpd parse-response-list
+				(send mpd mpd-list "artist")))
+	  (define albums empty)
+	  (define tracks empty)
 	  
+	  (define (handle-artist-click lb e)
+	    ;;handle double click: add all albums/tracks
+	    (update-albums (send lb get-string-selection)))
 	  (define artist-list (new list-box%
 	  			   [label "Artists"]
-	  			   [choices empty]
+	  			   [choices artists]
 	  			   [parent library-panel]
 	  			   [style (list 'multiple 'vertical-label)]
 				   [vert-margin 0]
-				   [horiz-margin 0]))
+				   [horiz-margin 0]
+				   [callback handle-artist-click]))
+
+	  (define (handle-album-click lb e)
+	    ;;handle doubleclick: add all tracks from album
+	    (if (equal? (send e get-event-type) 'list-box-dclick)
+		(begin
+		  (for-each
+		   (lambda (el)
+		     (send mpd add (hash-ref el "file")))
+		   (send mpd parse-group "file"
+			 (send mpd search "album"
+			       (send album-list get-string-selection)
+			       "artist"
+			       (send artist-list get-string-selection)))))
+		(begin
+		  (update-tracks
+		   (send lb get-string-selection)
+		   (send artist-list get-string-selection)))))
 	  (define album-list (new list-box%
 	  			  [label "Albums"]
-	  			  [choices empty]
+				  [choices albums]
 	  			  [parent library-panel]
 	  			  [style (list 'multiple 'vertical-label)]
 				  [vert-margin 0]
-				  [horiz-margin 0]))
+				  [horiz-margin 0]
+				  [callback handle-album-click]))
+	  
+	  (define (update-albums artist)
+	    (set! albums (send mpd parse-response-list
+			       (send mpd mpd-list "album" "artist" artist)))
+	    (send album-list clear)
+	    (send album-list set albums))
+
+	  (update-albums (first artists))
+
+	  (define (handle-song-click lb e)
+	    ;;handle double click: add track
+	    (when (equal? (send e get-event-type) 'list-box-dclick)
+		  (let ([str 
+			  (hash-ref
+			   (first (send mpd parse-group "file"
+				 (send mpd search "album"
+				       (send album-list get-string-selection)
+				       "artist"
+				       (send artist-list get-string-selection)
+				       "title"
+				       (send lb get-string-selection)))) "file")])
+		    (send mpd add str))))
+	  
 	  (define song-list (new list-box%
 	  			 [label "Tracks"]
-	  			 [choices empty]
+				 [choices tracks]
 	  			 [parent library-panel]
 	  			 [style (list 'multiple 'vertical-label)]
+				 [columns (list "Track" "Title")]
 				 [vert-margin 0]
-				 [horiz-margin 0]))
-
-	  	  ;; 2 Album
+				 [horiz-margin 0]
+				 [callback handle-song-click]))
+	  ;;add shit
+	  (define (update-tracks album artist)
+	    (set! tracks (send mpd parse-group "file"
+			       (send mpd search "album" album "artist" artist)))
+	    (send song-list clear)
+	    (let ([count 0])
+	      (for-each (lambda (t)
+			  (send song-list append (hash-ref t "Track"))
+			  (send song-list set-string count
+				(hash-ref t "Title") 1)
+			  (set! count (+ count 1))) tracks)))
+	  (update-tracks (first albums) (first artists))
+	  
+	  ;; 2 Album
 	  ;; 3 Song
+	  ;;set-column-width
 	  (define playlist-panel (new horizontal-pane%
 				  [parent this]))
 	  (define playlist (new list-box%
-			       [label "Library"]
+				[label "Playlist"]
+				;;get playlist
 			       [choices (list "Modest Mouse")]
 			       [parent playlist-panel]
 			       [style (list 'multiple 'vertical-label
@@ -165,4 +264,5 @@
 
 (send mpd-frame show #t)
 (send mpd-frame center)
+;;(send mpd-frame mpd-connect)
 
