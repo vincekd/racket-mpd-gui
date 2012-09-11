@@ -272,10 +272,10 @@
 		     (equal? (send e get-event-type) 'list-box-dclick)
 		     (let ([num (send playlist-box get-selection)])
 		       (send mpd play-id
-			     (hash-ref!
+			     (hash-ref
 			      (send playlist-box get-data num) "Id")))))]))
 	    
-	  
+	  ;;select currently playing
 	  (define (update-playlist)
 	    (define count 0)
 	    (for-each
