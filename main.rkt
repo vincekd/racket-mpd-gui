@@ -6,12 +6,13 @@
 ;; Distributed under the GPLv3 license
 ;;
 
+;;TODO: MPRIS2
+;;TODO: automatically update when mpd changes
+
 #lang racket/base
 
 (require racket/gui/base racket/class racket/list srfi/13)
 (require "../mpdclient/obj-main.rkt")
-
-;;TODO: MPRIS2
 
 (define mpd-frame
   (new
@@ -35,18 +36,20 @@
 
 	  (define menu-bar (new menu-bar% [parent this]))
 	  (define menu-file (new menu% [parent menu-bar] [label "File"]))
-	  (define menu-file-read (new menu-item%
-				      [parent menu-file]
-				      [label "Read"]
-				      [callback (lambda (i e)
-						  (displayln
-						   (send mpd fetch-response)))]))
-	  (define menu-file-quit (new menu-item%
-				      [parent menu-file]
-				      [label "Exit"]
-				      [callback (lambda (i e)
-						  (send mpd close-connection)
-						  (send mpd-frame show #f))]))
+	  (define menu-file-read
+	    (new menu-item%
+		 [parent menu-file]
+		 [label "Read"]
+		 [callback (lambda (i e)
+			     (displayln
+			      (send mpd fetch-response)))]))
+	  (define menu-file-quit
+	    (new menu-item%
+		 [parent menu-file]
+		 [label "Exit"]
+		 [callback (lambda (i e)
+			     (send mpd close-connection)
+			     (send mpd-frame show #f))]))
 
 	  (define menu-tools (new menu% [parent menu-bar] [label "Tools"]))
 	  (define menu-control (new menu% [parent menu-bar] [label "Control"]))
@@ -248,25 +251,30 @@
 	  
 	  ;; 2 Album
 	  ;; 3 Song
-	  ;;set-column-width
 	  (define playlist-panel (new horizontal-pane%
 				      [parent this]))
 	  (define playlist empty)
-	  (define playlist-box (new list-box%
-				    [label "Playlist"]
-				    ;;get playlist
-				    [choices playlist]
-				    [parent playlist-panel]
-				    [style (list 'multiple 'vertical-label
-						 'column-headers 'clickable-headers )]
-				    [columns (list "Track" "Title" "Album"
-						   "Artist" "Time" "Genre"
-						   "Date")]
-				    ;;sort by column
-				    [callback (lambda (l e)
-						;;TODO: finish
-						(displayln e))]))
-	  
+	  (define playlist-box
+	    (new list-box%
+		 [label "Playlist"]
+		 ;;get playlist
+		 [choices playlist]
+		 [parent playlist-panel]
+		 [style (list 'multiple 'vertical-label
+			      'column-headers 'clickable-headers )]
+		 [columns (list "Track" "Title" "Album"
+				"Artist" "Time" "Genre"
+				"Date")]
+		 ;;sort by column
+		 [callback
+		  (lambda (l e)
+		    (when
+		     (equal? (send e get-event-type) 'list-box-dclick)
+		     (let ([num (send playlist-box get-selection)])
+		       (send mpd play-id
+			     (hash-ref!
+			      (send playlist-box get-data num) "Id")))))]))
+	    
 	  
 	  (define (update-playlist)
 	    (define count 0)
@@ -285,6 +293,7 @@
 		      (string-pad (number->string secs) 2 #\0) "s") 4)
 	       (send playlist-box set-string count (hash-ref! ht "Genre" "") 5)
 	       (send playlist-box set-string count (hash-ref! ht "Date" "") 6)
+	       (send playlist-box set-data count ht)
 	       (set! count (+ count 1)))
 	     (send mpd parse-group "file"
 		   (send mpd playlist-info))))
