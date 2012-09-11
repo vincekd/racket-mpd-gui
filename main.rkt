@@ -8,7 +8,7 @@
 
 #lang racket/base
 
-(require racket/gui/base racket/class racket/list)
+(require racket/gui/base racket/class racket/list srfi/13)
 (require "../mpdclient/obj-main.rkt")
 
 ;;TODO: MPRIS2
@@ -35,12 +35,19 @@
 
 	  (define menu-bar (new menu-bar% [parent this]))
 	  (define menu-file (new menu% [parent menu-bar] [label "File"]))
+	  (define menu-file-read (new menu-item%
+				      [parent menu-file]
+				      [label "Read"]
+				      [callback (lambda (i e)
+						  (displayln
+						   (send mpd fetch-response)))]))
 	  (define menu-file-quit (new menu-item%
 				      [parent menu-file]
 				      [label "Exit"]
 				      [callback (lambda (i e)
 						  (send mpd close-connection)
 						  (send mpd-frame show #f))]))
+
 	  (define menu-tools (new menu% [parent menu-bar] [label "Tools"]))
 	  (define menu-control (new menu% [parent menu-bar] [label "Control"]))
 	  (define menu-help (new menu% [parent menu-bar] [label "Help"]))
@@ -133,11 +140,12 @@
 				    [parent display-panel]))
 	  
 	  (define (get-status-msg hasht)
-	    (string-append (hash-ref hasht "Track") " "
-			   (hash-ref hasht "Title") " "
-			   (hash-ref hasht "Time") "\n"
-			   (hash-ref hasht "Artist") " -- "
-			   (hash-ref hasht "Album")))
+	    (if (> (hash-count hasht) 0)
+		  (string-append (hash-ref hasht "Track") " "
+				 (hash-ref hasht "Title") " "
+				 (hash-ref hasht "Time") "\n"
+				 (hash-ref hasht "Artist") " -- "
+				 (hash-ref hasht "Album")) ""))
 	  
 	  (define text (new message%
 			    [label (get-status-msg
@@ -242,19 +250,56 @@
 	  ;; 3 Song
 	  ;;set-column-width
 	  (define playlist-panel (new horizontal-pane%
-				  [parent this]))
-	  (define playlist (new list-box%
-				[label "Playlist"]
-				;;get playlist
-			       [choices (list "Modest Mouse")]
-			       [parent playlist-panel]
-			       [style (list 'multiple 'vertical-label
-					    'column-headers 'clickable-headers )]
-			       [columns (list "Track" "Album" "Artist")]
-			       [column-order (list 0 1 2)]
-			       ;;sort by column
-			       [callback (lambda (l e)
-					   (displayln e))]))
+				      [parent this]))
+	  (define playlist empty)
+	  (define playlist-box (new list-box%
+				    [label "Playlist"]
+				    ;;get playlist
+				    [choices playlist]
+				    [parent playlist-panel]
+				    [style (list 'multiple 'vertical-label
+						 'column-headers 'clickable-headers )]
+				    [columns (list "Track" "Title" "Album"
+						   "Artist" "Time" "Genre"
+						   "Date")]
+				    ;;sort by column
+				    [callback (lambda (l e)
+						;;TODO: finish
+						(displayln e))]))
+	  
+	  
+	  (define (update-playlist)
+	    (define count 0)
+	    (for-each
+	     (lambda (ht)
+	       (define-values (mins secs) (quotient/remainder
+					   (string->number
+					    (hash-ref! ht "Time" "")) 60))
+	       (send playlist-box append (hash-ref! ht "Track" ""))
+	       (send playlist-box set-string count (hash-ref! ht "Title" "") 1)
+	       (send playlist-box set-string count (hash-ref! ht "Album" "") 2)
+	       (send playlist-box set-string count (hash-ref! ht "Artist" "") 3)
+	       (send playlist-box set-string count
+		     (string-append
+		      (number->string mins) "m "
+		      (string-pad (number->string secs) 2 #\0) "s") 4)
+	       (send playlist-box set-string count (hash-ref! ht "Genre" "") 5)
+	       (send playlist-box set-string count (hash-ref! ht "Date" "") 6)
+	       (set! count (+ count 1)))
+	     (send mpd parse-group "file"
+		   (send mpd playlist-info))))
+	  
+	  (update-playlist)
+	  
+	  ;;default column widths
+	  (send playlist-box set-column-width 0 50 5 300)
+	  (send playlist-box set-column-width 1 175 5 300)
+	  (send playlist-box set-column-width 2 175 5 300)
+	  (send playlist-box set-column-width 3 175 5 300)
+	  (send playlist-box set-column-width 4 100 5 300)
+	  (send playlist-box set-column-width 5 100 5 300)
+	  (send playlist-box set-column-width 6 50 5 300)
+	  
 	  );;end class def
    [label "RACKET MPD"]
    [width 800]
